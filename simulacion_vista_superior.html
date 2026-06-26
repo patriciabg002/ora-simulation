@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Esfera Circadiana — Vista Superior</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:#edeae4;color:#1a1610;font-family:'DM Sans',sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;padding:36px 16px 48px;gap:24px;
+  }
+  .title-block{text-align:center;}
+  .label{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:#B87333;margin-bottom:8px;display:block;}
+  h1{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:300;color:#1a1610;margin-bottom:4px;}
+  .view-title{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#8a7e72;text-align:center;}
+  .time-display{text-align:center;}
+  .time-big{font-family:'Cormorant Garamond',serif;font-size:60px;font-weight:300;line-height:1;color:#1a1610;letter-spacing:.04em;}
+  .time-sub{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#8a7e72;margin-top:5px;}
+  .phase-label{font-size:12px;color:#B87333;margin-top:7px;font-style:italic;min-height:18px;}
+  .timeline-wrap{width:100%;max-width:340px;}
+  .timeline-header{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#8a7e72;margin-bottom:7px;}
+  .timeline-bar{position:relative;height:8px;border-radius:4px;cursor:pointer;overflow:hidden;}
+  .timeline-thumb{position:absolute;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #B87333;box-shadow:0 2px 6px rgba(184,115,51,.4);pointer-events:none;}
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;}
+  button{background:transparent;border:.5px solid #c0b8ac;color:#1a1610;font-family:'DM Sans',sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:8px 16px;cursor:pointer;transition:all .2s;}
+  button:hover{border-color:#B87333;color:#B87333;}
+  button.active{border-color:#B87333;color:#B87333;background:rgba(184,115,51,.06);}
+  .speed-wrap{display:flex;align-items:center;gap:7px;font-size:9px;color:#8a7e72;letter-spacing:.12em;text-transform:uppercase;}
+  input[type=range]{-webkit-appearance:none;width:76px;height:2px;background:#c0b8ac;outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:#B87333;cursor:pointer;}
+  .dl-btn{background:transparent;border:.5px solid #B87333;color:#B87333;font-family:'DM Sans',sans-serif;font-size:10px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;cursor:pointer;transition:all .2s;}
+  .dl-btn:hover{background:rgba(184,115,51,.08);}
+</style>
+</head>
+<body>
+
+<div class="title-block">
+  <span class="label">TFG · Ingeniería de Diseño Industrial</span>
+  <h1>La Esfera — Vista superior</h1>
+</div>
+
+<div class="view-title">Vista superior — giro del filtro</div>
+<canvas id="cTop" width="320" height="320" style="border-radius:50%;box-shadow:0 4px 24px rgba(0,0,0,.14);"></canvas>
+
+<div class="time-display">
+  <div class="time-big" id="timeDisplay">00:00</div>
+  <div class="time-sub">Hora del día</div>
+  <div class="phase-label" id="phaseLabel"></div>
+</div>
+
+<div class="timeline-wrap">
+  <div class="timeline-header">
+    <span>00:00</span><span>12:00</span><span>24:00</span>
+  </div>
+  <div class="timeline-bar" id="timelineBar">
+    <canvas id="tlCanvas" width="340" height="8" style="display:block;width:100%;height:100%;border-radius:4px;"></canvas>
+    <div class="timeline-thumb" id="thumb"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="playBtn" class="active" onclick="togglePlay()">⏸ Pausar</button>
+  <button onclick="resetTime()">↺ Reiniciar</button>
+  <div class="speed-wrap">
+    Velocidad
+    <input type="range" id="speedSlider" min="1" max="20" value="6">
+    <span id="speedLabel">6×</span>
+  </div>
+</div>
+<button class="dl-btn" onclick="downloadFile()">↓ Descargar</button>
+
+<script>
+function getFilterAngle(mins) {
+  return (2 * Math.PI * mins / 1440);
+}
+
+function getAmberCoverage(mins) {
+  const theta = getFilterAngle(mins);
+  return Math.max(0, Math.sin(theta));
+}
+
+function getIntensity(mins) {
+  return 0.08 + 0.92 * (1 - getAmberCoverage(mins));
+}
+
+function lerp(a,b,t){ return a+(b-a)*Math.max(0,Math.min(1,t)); }
+
+function getPhaseLabel(mins) {
+  const h = Math.floor(mins/60);
+  if(h < 6)  return 'Noche — filtro naranja cubre la semiesfera emisora';
+  if(h < 8)  return 'Amanecer — el filtro gira saliendo hacia la zona opaca';
+  if(h < 16) return 'Día — luz blanca, filtro naranja oculto tras la zona opaca';
+  if(h < 20) return 'Atardecer — el filtro regresa cubriendo la semiesfera emisora';
+  return 'Noche — filtro naranja cubre la semiesfera emisora';
+}
+
+function drawTop(c, mins) {
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height, cx=W/2, cy=H/2, r=W/2-4;
+  ctx.clearRect(0,0,W,H);
+
+  const theta = getFilterAngle(mins);
+  const coverage = getAmberCoverage(mins);
+  const ity = getIntensity(mins);
+  const planAngle = -theta;
+  const a1 = planAngle - Math.PI/2;
+  const a2 = planAngle + Math.PI/2;
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.clip();
+
+  // Fondo
+  const bg = ctx.createRadialGradient(cx,cy-r*.1,r*.05,cx,cy,r);
+  bg.addColorStop(0,'#ddd5ca'); bg.addColorStop(.7,'#cac2b6'); bg.addColorStop(1,'#aaa29a');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+
+  // Glow emisor derecho
+  const lR=Math.round(lerp(255,255,coverage));
+  const lG=Math.round(lerp(248,150,coverage));
+  const lB=Math.round(lerp(210, 30,coverage));
+  if(ity>.05){
+    const gl = ctx.createRadialGradient(cx+r*.1,cy,0,cx,cy,r*.9);
+    gl.addColorStop(0,`rgba(${lR},${lG},${lB},${ity*.85})`);
+    gl.addColorStop(.5,`rgba(${lR},${lG},${lB},${ity*.45})`);
+    gl.addColorStop(1,`rgba(${lR},${lG},${lB},0)`);
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r*.97,-Math.PI/2,Math.PI/2); ctx.closePath();
+    ctx.fillStyle=gl; ctx.fill();
+    ctx.restore();
+  }
+
+  // Opaco izquierdo base
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r*.97,Math.PI/2,-Math.PI/2,false); ctx.closePath();
+  const og = ctx.createRadialGradient(cx-r*.3,cy,r*.05,cx-r*.1,cy,r*.8);
+  og.addColorStop(0,'#d4ccbe'); og.addColorStop(1,'#c0b8aa');
+  ctx.fillStyle=og; ctx.fill(); ctx.restore();
+
+  // Filtro naranja: semicírculo rotando
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx+r*.97*Math.cos(a1), cy+r*.97*Math.sin(a1));
+  ctx.arc(cx,cy,r*.97,a1,a2,false);
+  ctx.closePath();
+  const cFX=cx+Math.cos(planAngle)*r*.42;
+  const cFY=cy+Math.sin(planAngle)*r*.42;
+  const ag=ctx.createRadialGradient(cFX,cFY,r*.02,cx,cy,r*.97);
+  ag.addColorStop(0,  'rgba(255,175,50,.95)');
+  ag.addColorStop(.28,'rgba(235,130,18,.90)');
+  ag.addColorStop(.62,'rgba(190, 88,10,.83)');
+  ag.addColorStop(1,  'rgba(100, 35, 2,.62)');
+  ctx.fillStyle=ag; ctx.fill();
+
+  // Highlight
+  const hlX=cx+Math.cos(planAngle)*r*.52;
+  const hlY=cy+Math.sin(planAngle)*r*.52;
+  const hl2=ctx.createRadialGradient(hlX-r*.08,hlY-r*.1,0,hlX,hlY,r*.4);
+  hl2.addColorStop(0,'rgba(255,225,120,.22)'); hl2.addColorStop(1,'rgba(255,225,120,0)');
+  ctx.beginPath();
+  ctx.moveTo(cx+r*.97*Math.cos(a1),cy+r*.97*Math.sin(a1));
+  ctx.arc(cx,cy,r*.97,a1,a2,false); ctx.closePath();
+  ctx.fillStyle=hl2; ctx.fill();
+
+  // Línea del diámetro
+  ctx.beginPath();
+  ctx.moveTo(cx+r*.97*Math.cos(a1),cy+r*.97*Math.sin(a1));
+  ctx.lineTo(cx+r*.97*Math.cos(a2),cy+r*.97*Math.sin(a2));
+  ctx.strokeStyle='rgba(185,108,22,.55)'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.restore();
+
+  // Opaco encima para tapar el filtro cuando está en esa zona
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r*.97,Math.PI/2,-Math.PI/2,false); ctx.closePath();
+  const og2=ctx.createRadialGradient(cx-r*.3,cy,r*.05,cx-r*.1,cy,r*.8);
+  og2.addColorStop(0,'rgba(212,204,190,.92)'); og2.addColorStop(1,'rgba(192,184,170,.92)');
+  ctx.fillStyle=og2; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx,cy-r*.97); ctx.lineTo(cx,cy+r*.97);
+  ctx.strokeStyle='rgba(140,130,118,.55)'; ctx.lineWidth=1.2; ctx.stroke();
+  ctx.restore();
+
+  // Centro
+  ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2);
+  ctx.fillStyle='rgba(100,90,80,.5)'; ctx.fill();
+
+  // Especular
+  const hl=ctx.createRadialGradient(cx-r*.1,cy-r*.35,0,cx,cy-r*.15,r*.5);
+  hl.addColorStop(0,'rgba(255,255,255,.15)'); hl.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=hl; ctx.fillRect(0,0,W,H);
+  const ed=ctx.createRadialGradient(cx,cy,r*.55,cx,cy,r);
+  ed.addColorStop(0,'rgba(0,0,0,0)'); ed.addColorStop(1,'rgba(0,0,0,.32)');
+  ctx.fillStyle=ed; ctx.fillRect(0,0,W,H);
+
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.strokeStyle='rgba(150,140,128,.3)'; ctx.lineWidth=1; ctx.stroke();
+
+  ctx.font=`${Math.round(W*.042)}px DM Sans`;
+  ctx.fillStyle='rgba(100,90,80,.6)'; ctx.textAlign='center';
+  ctx.fillText('OPACO',cx-r*.52,cy+2);
+  ctx.fillText('EMISOR',cx+r*.52,cy+2);
+}
+
+function updateUI(mins){
+  const coverage=getAmberCoverage(mins);
+  const h=Math.floor(mins/60), m=Math.floor(mins%60);
+  document.getElementById('timeDisplay').textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+  document.getElementById('phaseLabel').textContent=getPhaseLabel(mins);
+  const pct=mins/1440;
+  const bar=document.getElementById('timelineBar');
+  document.getElementById('thumb').style.left=(pct*bar.offsetWidth)+'px';
+  drawTimeline(pct);
+}
+
+function drawTimeline(progress){
+  const tc=document.getElementById('tlCanvas'); if(!tc)return;
+  const tx=tc.getContext('2d'),TW=tc.width,TH=tc.height;
+  tx.clearRect(0,0,TW,TH);
+  const g=tx.createLinearGradient(0,0,TW,0);
+  g.addColorStop(0,'#c86820'); g.addColorStop(5/24,'#c07828');
+  g.addColorStop(8/24,'#7090c0'); g.addColorStop(12/24,'#8098c8');
+  g.addColorStop(17/24,'#8090c0'); g.addColorStop(20/24,'#c07028');
+  g.addColorStop(1,'#c86820');
+  tx.fillStyle=g; tx.beginPath(); tx.roundRect(0,0,TW,TH,4); tx.fill();
+  tx.fillStyle='rgba(255,255,255,.10)'; tx.fillRect(0,0,progress*TW,TH);
+}
+
+let currentMinutes=0, playing=true, animFrameId, lastTs=null, speed=6;
+
+function animLoop(ts){
+  if(!playing)return;
+  if(!lastTs)lastTs=ts;
+  const dt=ts-lastTs; lastTs=ts;
+  currentMinutes=(currentMinutes+dt*speed/3600*60)%1440;
+  drawTop(document.getElementById('cTop'),currentMinutes);
+  updateUI(currentMinutes);
+  animFrameId=requestAnimationFrame(animLoop);
+}
+
+function togglePlay(){
+  playing=!playing;
+  const btn=document.getElementById('playBtn');
+  if(playing){btn.textContent='⏸ Pausar';btn.classList.add('active');lastTs=null;animFrameId=requestAnimationFrame(animLoop);}
+  else{btn.textContent='▶ Reproducir';btn.classList.remove('active');cancelAnimationFrame(animFrameId);}
+}
+function resetTime(){currentMinutes=0;lastTs=null;drawTop(document.getElementById('cTop'),0);updateUI(0);}
+
+document.getElementById('speedSlider').addEventListener('input',function(){speed=+this.value;document.getElementById('speedLabel').textContent=speed+'×';});
+
+const tBar=document.getElementById('timelineBar'); let drag=false;
+function setFromEv(e){const rect=tBar.getBoundingClientRect();const cx2=e.touches?e.touches[0].clientX:e.clientX;const ratio=Math.max(0,Math.min(1,(cx2-rect.left)/rect.width));currentMinutes=ratio*1440;lastTs=null;drawTop(document.getElementById('cTop'),currentMinutes);updateUI(currentMinutes);}
+tBar.addEventListener('mousedown',e=>{drag=true;setFromEv(e);});
+tBar.addEventListener('touchstart',e=>{drag=true;setFromEv(e);},{passive:true});
+window.addEventListener('mousemove',e=>{if(drag)setFromEv(e);});
+window.addEventListener('touchmove',e=>{if(drag)setFromEv(e);},{passive:true});
+window.addEventListener('mouseup',()=>drag=false);
+window.addEventListener('touchend',()=>drag=false);
+
+function downloadFile(){const html=document.documentElement.outerHTML;const blob=new Blob([html],{type:'text/html'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='esfera_vista_superior.html';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}
+
+drawTop(document.getElementById('cTop'),0);
+updateUI(0);
+animFrameId=requestAnimationFrame(animLoop);
+</script>
+</body>
+</html>
